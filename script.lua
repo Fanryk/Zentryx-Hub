@@ -1,9 +1,39 @@
 -- ============================================================
--- Zentryx Hub v4.4 CB (All-in-One: Key System + Full Cheat)
+-- Zentryx Hub v4.4 CB (All-in-One: Cloudflare KV HWID System)
 -- ============================================================
 local ok, err = pcall(function()
 
 task.wait(0.5)
+
+-- ============================================================
+-- CONFIGURATION & REMOTE BACKEND
+-- ============================================================
+local API_URL = "https://zentryx-keys.stkn228.workers.dev"
+local SAVE_KEY_FILE = "Zentryx_SavedKey.txt"
+
+-- ============================================================
+-- HWID GENERATOR / RETRIEVER
+-- ============================================================
+local function getClientHWID()
+    local hwid = nil
+    pcall(function()
+        if gethwid then
+            hwid = gethwid()
+        elseif get_hwid then
+            hwid = get_hwid()
+        elseif identifyexecutor and getgenv and getgenv().gethwid then
+            hwid = getgenv().gethwid()
+        else
+            local analytics = game:GetService("RbxAnalyticsService")
+            if analytics then
+                hwid = analytics:GetClientId()
+            end
+        end
+    end)
+    return tostring(hwid or "UNKNOWN_DEVICE_ID")
+end
+
+local CurrentHWID = getClientHWID()
 
 -- ============================================================
 -- SERVICES
@@ -14,6 +44,7 @@ local Players = game:GetService("Players")
 local TWS = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local CAS = game:GetService("ContextActionService")
+local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 if not LocalPlayer then
@@ -23,6 +54,9 @@ if not LocalPlayer then
     until LocalPlayer or tried >= 10
     if not LocalPlayer then return end
 end
+
+-- Universal executor request handler
+local customRequest = (syn and syn.request) or (http and http.request) or http_request or request or (fluxus and fluxus.request)
 
 -- ============================================================
 -- THEME & PALETTE
@@ -165,83 +199,244 @@ local function toast(title, stateOrText, customColor)
     end)
 end
 
--- ============================================================
--- БАЗА КЛЮЧЕЙ (300 ШТУК + МАСТЕР КЛЮЧ)
--- ============================================================
-local RegisteredKeys = {}
+local startZentryxHub
 
-local KeyList = {
-    "ZTX-DEV-FREE-PASS",
-    "ZTX-06C0-FDE4-2A16", "ZTX-3701-0737-B3C3", "ZTX-6742-108A-3D70", "ZTX-9783-19DD-C71D", "ZTX-C7C4-2330-50CA",
-    "ZTX-F805-2C83-DA77", "ZTX-2846-35D6-6424", "ZTX-5887-3F29-EDD1", "ZTX-88C8-487C-777E", "ZTX-B909-51CF-012B",
-    "ZTX-E94A-5B22-8AD8", "ZTX-198B-6475-1485", "ZTX-49CC-6DC8-9E32", "ZTX-7A0D-771B-27DF", "ZTX-AA4E-806E-B18C",
-    "ZTX-DA8F-89C1-3B39", "ZTX-0AD0-9314-C4E6", "ZTX-3B11-9C67-4E93", "ZTX-6B52-A5BA-D840", "ZTX-9B93-AF0D-61ED",
-    "ZTX-CBD4-B860-EB9A", "ZTX-FC15-C1B3-7547", "ZTX-2C56-CB06-FEF4", "ZTX-5C97-D459-88A1", "ZTX-8CD8-DDAC-124E",
-    "ZTX-BD19-E6FF-9BFB", "ZTX-ED5A-F052-25A8", "ZTX-1D9B-F9A5-AF55", "ZTX-4DDC-02F8-3902", "ZTX-7E1D-0C4B-C2AF",
-    "ZTX-AE5E-159E-4C5C", "ZTX-DE9F-1EF1-D609", "ZTX-0EE0-2844-5FB6", "ZTX-3F21-3197-E963", "ZTX-6F62-3AEA-7310",
-    "ZTX-9FA3-443D-FCBD", "ZTX-CFE4-4D90-866A", "ZTX-0025-56E3-1017", "ZTX-3066-6036-99C4", "ZTX-60A7-6989-2371",
-    "ZTX-90E8-72DC-AD1E", "ZTX-C129-7C2F-36CB", "ZTX-F16A-8582-C078", "ZTX-21AB-8ED5-4A25", "ZTX-51EC-9828-D3D2",
-    "ZTX-822D-A17B-5D7F", "ZTX-B26E-AACE-E72C", "ZTX-E2AF-B421-70D9", "ZTX-12F0-BD74-FA86", "ZTX-4331-C6C7-8433",
-    "ZTX-7372-D01A-0DE0", "ZTX-A3B3-D96D-978D", "ZTX-D3F4-E2C0-213A", "ZTX-0435-EC13-AAE7", "ZTX-3476-F566-3494",
-    "ZTX-64B7-FEB9-BE41", "ZTX-94F8-080C-47EE", "ZTX-C539-115F-D19B", "ZTX-F57A-1AB2-5B48", "ZTX-25BB-2405-E4F5",
-    "ZTX-55FC-2D58-6EA2", "ZTX-863D-36AB-F84F", "ZTX-B67E-3FFE-81FC", "ZTX-E6BF-4951-0BA9", "ZTX-1700-52A4-9556",
-    "ZTX-4741-5BF7-1F03", "ZTX-7782-654A-A8B0", "ZTX-A7C3-6E9D-325D", "ZTX-D804-77F0-BC0A", "ZTX-0845-8143-45B7",
-    "ZTX-3886-8A96-CF64", "ZTX-68C7-93E9-5911", "ZTX-9908-9D3C-E2BE", "ZTX-C949-A68F-6C6B", "ZTX-F98A-AFE2-F618",
-    "ZTX-29CB-B935-7FC5", "ZTX-5A0C-C288-0972", "ZTX-8A4D-CBDB-931F", "ZTX-BA8E-D52E-1CCC", "ZTX-EACF-DE81-A679",
-    "ZTX-1B10-E7D4-3026", "ZTX-4B51-F127-B9D3", "ZTX-7B92-FA7A-4380", "ZTX-ABD3-03CD-CD2D", "ZTX-DC14-0D20-56DA",
-    "ZTX-0C55-1673-E087", "ZTX-3C96-1FC6-6A34", "ZTX-6CD7-2919-F3E1", "ZTX-9D18-326C-7D8E", "ZTX-CD59-3BBF-073B",
-    "ZTX-FD9A-4512-90E8", "ZTX-2DDB-4E65-1A95", "ZTX-5E1C-57B8-A442", "ZTX-8E5D-610B-2DEF", "ZTX-BE9E-6A5E-B79C",
-    "ZTX-EEDF-73B1-4149", "ZTX-1F20-7D04-CAF6", "ZTX-4F61-8657-54A3", "ZTX-7FA2-8FAA-DE50", "ZTX-AFE3-98FD-67FD",
-    "ZTX-E024-A250-F1AA", "ZTX-1065-ABA3-7B57", "ZTX-40A6-B4F6-0504", "ZTX-70E7-BE49-8EB1", "ZTX-A128-C79C-185E",
-    "ZTX-D169-D0EF-A20B", "ZTX-01AA-DA42-2BB8", "ZTX-31EB-E395-B565", "ZTX-622C-ECE8-3F12", "ZTX-926D-F63B-C8BF",
-    "ZTX-C2AE-FF8E-526C", "ZTX-F2EF-08E1-DC19", "ZTX-2330-1234-65C6", "ZTX-5371-1B87-EF73", "ZTX-83B2-24DA-7920",
-    "ZTX-B3F3-2E2D-02CD", "ZTX-E434-3780-8C7A", "ZTX-1475-40D3-1627", "ZTX-44B6-4A26-9FD4", "ZTX-74F7-5379-2981",
-    "ZTX-A538-5CCC-B32E", "ZTX-D579-661F-3CDB", "ZTX-05BA-6F72-C688", "ZTX-35FB-78C5-5035", "ZTX-663C-8218-D9E2",
-    "ZTX-967D-8B6B-638F", "ZTX-C6BE-94BE-ED3C", "ZTX-F6FF-9E11-76E9", "ZTX-2740-A764-0096", "ZTX-5781-B0B7-8A43",
-    "ZTX-87C2-BA0A-13F0", "ZTX-B803-C35D-9D9D", "ZTX-E844-CCB0-274A", "ZTX-1885-D603-B0F7", "ZTX-48C6-DF56-3AA4",
-    "ZTX-7907-E8A9-C451", "ZTX-A948-F1FC-4DFE", "ZTX-D989-FB4F-D7AB", "ZTX-09CA-04A2-6158", "ZTX-3A0B-0DF5-EB05",
-    "ZTX-6A4C-1748-74B2", "ZTX-9A8D-209B-FE5F", "ZTX-CACE-29EE-880C", "ZTX-FB0F-3341-11B9", "ZTX-2B50-3C94-9B66",
-    "ZTX-5B91-45E7-2513", "ZTX-8BD2-4F3A-AEC0", "ZTX-BC13-588D-386D", "ZTX-EC54-61E0-C21A", "ZTX-1C95-6B33-4BC7",
-    "ZTX-4CD6-7486-D574", "ZTX-7D17-7DD9-5F21", "ZTX-AD58-872C-E8CE", "ZTX-DD99-907F-727B", "ZTX-0DDA-99D2-FC28",
-    "ZTX-3E1B-A325-85D5", "ZTX-6E5C-AC78-0F82", "ZTX-9E9D-B5CB-992F", "ZTX-CED4-BF1E-22DC", "ZTX-FF20-C871-AC89",
-    "ZTX-2F61-D1C4-3636", "ZTX-5FA2-DB17-BFE3", "ZTX-8FE3-E46A-4990", "ZTX-C024-EDBD-D33D", "ZTX-F065-F710-5CEA",
-    "ZTX-20A6-0063-E697", "ZTX-50E7-09B6-7044", "ZTX-8128-1309-F9F1", "ZTX-B169-1C5C-839E", "ZTX-E1AA-25AF-0D4B",
-    "ZTX-11EB-2F02-96F8", "ZTX-422C-3855-20A5", "ZTX-726D-41A8-AA52", "ZTX-A2AE-4AFB-33FF", "ZTX-D2EF-544E-BDAC",
-    "ZTX-0330-5DA1-4759", "ZTX-3371-66F4-D106", "ZTX-63B2-7047-5AB3", "ZTX-93F3-799A-E460", "ZTX-C434-82ED-6E0D",
-    "ZTX-F475-8C40-F7BA", "ZTX-24B6-9593-8167", "ZTX-54F7-9EE6-0B14", "ZTX-8538-A839-94C1", "ZTX-B579-B18C-1E6E",
-    "ZTX-E5BA-BADF-A81B", "ZTX-15FB-C432-31C8", "ZTX-463C-CD85-BB75", "ZTX-767D-D6D8-4522", "ZTX-A6BE-E02B-CECF",
-    "ZTX-D6FF-E97E-587C", "ZTX-0740-F2D1-E229", "ZTX-3781-FC24-6BD6", "ZTX-67C2-0577-F583", "ZTX-9803-0ECA-7F30",
-    "ZTX-C844-181D-08DD", "ZTX-F885-2170-928A", "ZTX-28C6-2AC3-1C37", "ZTX-5907-3416-A5E4", "ZTX-8948-3D69-2F91",
-    "ZTX-B989-46BC-B93E", "ZTX-E9CA-500F-42EB", "ZTX-1A0B-5962-CC98", "ZTX-4A4C-62B5-5645", "ZTX-7A8D-6C08-DFF2",
-    "ZTX-AACE-755B-699F", "ZTX-DB0F-7EAE-F34C", "ZTX-0B50-8801-7CF9", "ZTX-3B91-9154-06A6", "ZTX-6BD2-9AA7-9053",
-    "ZTX-9C13-A3FA-1A00", "ZTX-CC54-AD4D-A3AD", "ZTX-FC95-B6A0-2D5A", "ZTX-2CD6-BFF3-B707", "ZTX-5D17-C946-40B4",
-    "ZTX-8D58-D299-CA61", "ZTX-BD99-DBEC-540E", "ZTX-EDDA-E53F-DDBB", "ZTX-1E1B-EE92-6768", "ZTX-4E5C-F7E5-F115",
-    "ZTX-7E9D-0138-7AC2", "ZTX-AEDE-0A8B-046F", "ZTX-DF1F-13DE-8E1C", "ZTX-0F60-1D31-17C9", "ZTX-3FA1-2684-A176",
-    "ZTX-6FE2-2FD7-2B23", "ZTX-A023-392A-B4D0", "ZTX-D064-427D-3E7D", "ZTX-00A5-4BD0-C82A", "ZTX-30E6-5523-51D7",
-    "ZTX-6127-5E76-DB84", "ZTX-9168-67C9-6531", "ZTX-C1A9-711C-EEDE", "ZTX-F1EA-7A6F-788B", "ZTX-222B-83C2-0238",
-    "ZTX-526C-8D15-8BE5", "ZTX-82AD-9668-1592", "ZTX-B2EE-9FBB-9F3F", "ZTX-E32F-A90E-28EC", "ZTX-1370-B261-B299",
-    "ZTX-43B1-BBB4-3C46", "ZTX-73F2-C507-C5F3", "ZTX-A433-CE5A-4FA0", "ZTX-D474-D7AD-D94D", "ZTX-04B5-E100-62FA",
-    "ZTX-34F6-EA53-ECA7", "ZTX-6537-F3A6-7654", "ZTX-9578-FCF9-0001", "ZTX-C5B9-064C-89AE", "ZTX-F5FA-0F9F-135B",
-    "ZTX-263B-18F2-9D08", "ZTX-567C-2245-26B5", "ZTX-86BD-2B98-B062", "ZTX-B6FE-34EB-3A0F", "ZTX-E73F-3E3E-C3BC",
-    "ZTX-1780-4791-4D69", "ZTX-47C1-50E4-D716", "ZTX-7802-5A37-60C3", "ZTX-A843-638A-EA70", "ZTX-D884-6CDD-741D",
-    "ZTX-08C5-7630-FDCA", "ZTX-3906-7F83-8777", "ZTX-6947-88D6-1124", "ZTX-9988-9229-9AD1", "ZTX-C9C9-9B7C-247E",
-    "ZTX-FA0A-A4CF-AE2B", "ZTX-2A4B-AE22-37D8", "ZTX-5A8C-B775-C185", "ZTX-8ACD-C0C8-4B32", "ZTX-BB0E-CA1B-D4DF",
-    "ZTX-EB4F-D36E-5E8C", "ZTX-1B90-DCC1-E839", "ZTX-4BD1-E614-71E6", "ZTX-7C12-EF67-FB93", "ZTX-AC53-F8BA-8540",
-    "ZTX-DC94-020D-0EED", "ZTX-0CD5-0B60-989A", "ZTX-3D16-14B3-2247", "ZTX-6D57-1E06-ABF4", "ZTX-9D98-2759-35A1",
-    "ZTX-CDD9-30AC-BF4E", "ZTX-FE1A-39FF-48FB", "ZTX-2E5B-4352-D2A8", "ZTX-5E9C-4CA5-5C55", "ZTX-8EDD-55F8-E602",
-    "ZTX-BF1E-5F4B-6FAF", "ZTX-EF5F-689E-F95C", "ZTX-1FA0-71F1-8309", "ZTX-4FE1-7B44-0CB6", "ZTX-8022-8497-9663",
-    "ZTX-B063-8DEA-2010", "ZTX-E0A4-973D-A9BD", "ZTX-10E5-A090-336A", "ZTX-4126-A9E3-BD17", "ZTX-7167-B336-46C4",
-    "ZTX-A1A8-BC89-D071", "ZTX-D1E9-C5DC-5A1E", "ZTX-022A-CF2F-E3CB", "ZTX-326B-D882-6D78", "ZTX-62AC-E1D5-F725"
-}
+-- ============================================================
+-- KEY VERIFICATION REQUEST
+-- ============================================================
+local function verifyRemoteKey(key)
+    if not customRequest then
+        return false, "Executor does not support HTTP requests!"
+    end
 
-for _, key in ipairs(KeyList) do
-    RegisteredKeys[key] = false
+    local payload = HttpService:JSONEncode({
+        key = key,
+        hwid = CurrentHWID
+    })
+
+    local res
+    local okRequest = pcall(function()
+        res = customRequest({
+            Url = API_URL,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = payload
+        })
+    end)
+
+    if not okRequest or not res then
+        return false, "Failed to connect to verification server!"
+    end
+
+    local bodyData
+    local okJson = pcall(function()
+        bodyData = HttpService:JSONDecode(res.Body)
+    end)
+
+    if not okJson or not bodyData then
+        return false, "Server returned invalid response!"
+    end
+
+    if bodyData.valid == true then
+        return true, bodyData.message or "Key accepted!"
+    else
+        return false, bodyData.message or "Invalid or device-locked key!"
+    end
 end
 
 -- ============================================================
--- ЗАПУСК ВСЕГО ФУНКЦИОНАЛА ЧИТА (ZENTRYX HUB v4.2 CORE)
+-- GUI KEY SYSTEM WINDOW
 -- ============================================================
-local function startZentryxHub()
+local KeyWin = Instance.new("Frame")
+KeyWin.Name = "KeyWindow"
+KeyWin.Parent = gui
+KeyWin.Size = UDim2.new(0, 390, 0, 245)
+KeyWin.Position = UDim2.new(0.5, -195, 0.5, -122)
+KeyWin.BackgroundColor3 = C_BG
+KeyWin.BorderSizePixel = 0
+KeyWin.Active = true
+KeyWin.ZIndex = 100
+Instance.new("UICorner", KeyWin).CornerRadius = UDim.new(0, 12)
+
+local kStroke = Instance.new("UIStroke", KeyWin)
+kStroke.Color = C_STROKE
+kStroke.Thickness = 1.2
+
+local KHead = Instance.new("Frame", KeyWin)
+KHead.Size = UDim2.new(1, 0, 0, 42)
+KHead.BackgroundColor3 = C_CARD
+KHead.BorderSizePixel = 0
+KHead.ZIndex = 101
+Instance.new("UICorner", KHead).CornerRadius = UDim.new(0, 12)
+
+local KTitle = Instance.new("TextLabel", KHead)
+KTitle.Size = UDim2.new(1, -50, 1, 0)
+KTitle.Position = UDim2.new(0, 14, 0, 0)
+KTitle.BackgroundTransparency = 1
+KTitle.Text = "ZENTRYX <font color=\"rgb(88,145,255)\">KEY SYSTEM</font>"
+KTitle.RichText = true
+KTitle.Font = Enum.Font.GothamBold
+KTitle.TextSize = 13
+KTitle.TextColor3 = C_TEXT
+KTitle.TextXAlignment = Enum.TextXAlignment.Left
+KTitle.ZIndex = 102
+
+local KClose = Instance.new("TextButton", KHead)
+KClose.Size = UDim2.new(0, 26, 0, 26)
+KClose.Position = UDim2.new(1, -34, 0.5, -13)
+KClose.BackgroundColor3 = C_CARD_INNER
+KClose.BorderSizePixel = 0
+KClose.Text = "X"
+KClose.Font = Enum.Font.GothamBold
+KClose.TextSize = 12
+KClose.TextColor3 = C_TEXT_MUTED
+KClose.AutoButtonColor = false
+KClose.ZIndex = 102
+Instance.new("UICorner", KClose).CornerRadius = UDim.new(0, 6)
+KClose.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+local KSub = Instance.new("TextLabel", KeyWin)
+KSub.Size = UDim2.new(1, -30, 0, 24)
+KSub.Position = UDim2.new(0, 15, 0, 48)
+KSub.BackgroundTransparency = 1
+KSub.Text = "Enter license key (automatically binds to your PC):"
+KSub.Font = Enum.Font.GothamMedium
+KSub.TextSize = 11
+KSub.TextColor3 = C_TEXT_MUTED
+KSub.TextXAlignment = Enum.TextXAlignment.Left
+KSub.ZIndex = 101
+
+local BoxWrap = Instance.new("Frame", KeyWin)
+BoxWrap.Size = UDim2.new(1, -30, 0, 40)
+BoxWrap.Position = UDim2.new(0, 15, 0, 78)
+BoxWrap.BackgroundColor3 = C_CARD_INNER
+BoxWrap.BorderSizePixel = 0
+BoxWrap.ZIndex = 101
+Instance.new("UICorner", BoxWrap).CornerRadius = UDim.new(0, 8)
+local bSt = Instance.new("UIStroke", BoxWrap)
+bSt.Color = C_STROKE; bSt.Thickness = 1
+
+local KInput = Instance.new("TextBox", BoxWrap)
+KInput.Size = UDim2.new(1, -20, 1, 0)
+KInput.Position = UDim2.new(0, 10, 0, 0)
+KInput.BackgroundTransparency = 1
+KInput.PlaceholderText = "Paste key here (e.g. ZTX-XXXX-XXXX-XXXX)..."
+KInput.PlaceholderColor3 = C_TEXT_MUTED
+KInput.Text = ""
+KInput.Font = Enum.Font.GothamSemibold
+KInput.TextSize = 11
+KInput.TextColor3 = C_TEXT
+KInput.ClearTextOnFocus = false
+KInput.ZIndex = 102
+
+local SubBtn = Instance.new("TextButton", KeyWin)
+SubBtn.Size = UDim2.new(1, -30, 0, 36)
+SubBtn.Position = UDim2.new(0, 15, 0, 132)
+SubBtn.BackgroundColor3 = C_ACCENT
+SubBtn.BorderSizePixel = 0
+SubBtn.Text = "VERIFY KEY"
+SubBtn.Font = Enum.Font.GothamBold
+SubBtn.TextSize = 12
+SubBtn.TextColor3 = Color3.new(1, 1, 1)
+SubBtn.AutoButtonColor = false
+SubBtn.ZIndex = 101
+Instance.new("UICorner", SubBtn).CornerRadius = UDim.new(0, 8)
+
+local GetBtn = Instance.new("TextButton", KeyWin)
+GetBtn.Size = UDim2.new(1, -30, 0, 34)
+GetBtn.Position = UDim2.new(0, 15, 0, 178)
+GetBtn.BackgroundColor3 = C_CARD
+GetBtn.BorderSizePixel = 0
+GetBtn.Text = "GET KEY (DISCORD)"
+GetBtn.Font = Enum.Font.GothamBold
+GetBtn.TextSize = 11
+GetBtn.TextColor3 = C_TEXT_MUTED
+GetBtn.AutoButtonColor = false
+GetBtn.ZIndex = 101
+Instance.new("UICorner", GetBtn).CornerRadius = UDim.new(0, 8)
+local gSt = Instance.new("UIStroke", GetBtn)
+gSt.Color = C_STROKE; gSt.Thickness = 1
+
+GetBtn.MouseButton1Click:Connect(function()
+    local url = "https://discord.gg/mfxyHQ8AQq"
+    pcall(function() if setclipboard then setclipboard(url) end end)
+    pcall(function() if openurl then openurl(url) end end)
+    toast("Discord Link", "Copied to clipboard!", C_ACCENT)
+end)
+
+local function unlockHub()
+    TWS:Create(KeyWin, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1
+    }):Play()
+
+    task.delay(0.3, function()
+        KeyWin:Destroy()
+        startZentryxHub()
+    end)
+end
+
+-- Auto-login via local file if previously verified
+if isfile and readfile and isfile(SAVE_KEY_FILE) then
+    local saved = readfile(SAVE_KEY_FILE):gsub("%s+", "")
+    if saved and saved ~= "" then
+        task.spawn(function()
+            local success, msg = verifyRemoteKey(saved)
+            if success then
+                toast("Auto-Login", "Welcome back!", C_SUCCESS)
+                task.delay(0.2, unlockHub)
+            end
+        end)
+    end
+end
+
+SubBtn.MouseButton1Click:Connect(function()
+    local entered = string.upper(KInput.Text:gsub("%s+", ""))
+    if entered == "" then
+        toast("Key System", "Key field cannot be empty", C_WARNING)
+        return
+    end
+
+    SubBtn.Text = "VERIFYING..."
+    task.spawn(function()
+        local success, msg = verifyRemoteKey(entered)
+        SubBtn.Text = "VERIFY KEY"
+        if success then
+            if writefile then
+                pcall(function() writefile(SAVE_KEY_FILE, entered) end)
+            end
+            toast("Key System", msg, C_SUCCESS)
+            unlockHub()
+        else
+            toast("Key System", msg, C_DANGER)
+        end
+    end)
+end)
+
+local drag, dStart, sPos
+KHead.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+        drag = true; dStart = Vector2.new(inp.Position.X, inp.Position.Y); sPos = KeyWin.Position
+    end
+end)
+UIS.InputChanged:Connect(function(inp)
+    if drag and inp.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = Vector2.new(inp.Position.X, inp.Position.Y) - dStart
+        KeyWin.Position = UDim2.new(sPos.X.Scale, sPos.X.Offset + delta.X, sPos.Y.Scale, sPos.Y.Offset + delta.Y)
+    end
+end)
+UIS.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
+end)
+
+toast("Zentryx Key System", "Enter key to proceed...", C_ACCENT)
+
+-- ============================================================
+-- FULL CHEAT CORE (ENGLISH UI)
+-- ============================================================
+startZentryxHub = function()
     local S = {
         bindType = "keyboard",
         bindKey = Enum.KeyCode.F,
@@ -262,13 +457,13 @@ local function startZentryxHub()
         scanBusy = false,
         aimHasTarget = false,
 
-        -- Визуал и Очистка
+        -- Visuals
         viewAngles = true,
         viewAngleColor = Color3.fromRGB(255, 215, 0),
         antiFlash = true,
         antiSmoke = true,
 
-        -- Движение
+        -- Movement
         bhopEnabled = true,
         bhopHolding = false,
         bhopSpeed = 1.8,
@@ -280,7 +475,7 @@ local function startZentryxHub()
         bhopToggleHeld = false,
         bhopActive = false,
 
-        -- Настройки тумана
+        -- Fog
         fogEnabled = false,
         fogDensity = 0.45,
         fogDistance = 350,
@@ -417,9 +612,6 @@ local function startZentryxHub()
         OV.dt.Position = UDim2.new(0.5,ox-2,0.5,oy-2)
     end
 
-    -- ============================================================
-    -- CROSSHAIR SCAN
-    -- ============================================================
     local function scanCH()
         if S.scanBusy then return end
         S.scanBusy = true
@@ -457,7 +649,7 @@ local function startZentryxHub()
     task.spawn(function() task.wait(0.3); scanCH() end)
 
     -- ============================================================
-    -- ESP LOGIC & PLAYER VIEW ANGLES
+    -- ESP & VIEW ANGLES
     -- ============================================================
     local function clearDeathConns(plr)
         if S.deathConnections[plr] then
@@ -653,7 +845,7 @@ local function startZentryxHub()
     Players.PlayerRemoving:Connect(clearPlayerESP)
 
     -- ============================================================
-    -- ANTI-FLASH & ANTI-SMOKE ENGINE
+    -- ANTI-FLASH & ANTI-SMOKE
     -- ============================================================
     local function doAntiFlash()
         if not S.antiFlash then return end
@@ -716,7 +908,7 @@ local function startZentryxHub()
     end)
 
     -- ============================================================
-    -- FOG ENGINE (СБРОС И ПРИМЕНЕНИЕ)
+    -- FOG ENGINE
     -- ============================================================
     local function resetFog()
         pcall(function()
@@ -1421,174 +1613,6 @@ local function startZentryxHub()
     toast("Zentryx Hub", "LOADED", C_SUCCESS)
     if S.myTeamName then toast("Assigned Team", S.myTeamName, C_ACCENT) end
 end
-
--- ============================================================
--- GUI KEY SYSTEM (ОКНО ВВОДА КЛЮЧА)
--- ============================================================
-local KeyWin = Instance.new("Frame")
-KeyWin.Name = "KeyWindow"
-KeyWin.Parent = gui
-KeyWin.Size = UDim2.new(0, 390, 0, 245)
-KeyWin.Position = UDim2.new(0.5, -195, 0.5, -122)
-KeyWin.BackgroundColor3 = C_BG
-KeyWin.BorderSizePixel = 0
-KeyWin.Active = true
-KeyWin.ZIndex = 100
-Instance.new("UICorner", KeyWin).CornerRadius = UDim.new(0, 12)
-
-local kStroke = Instance.new("UIStroke", KeyWin)
-kStroke.Color = C_STROKE
-kStroke.Thickness = 1.2
-
-local KHead = Instance.new("Frame", KeyWin)
-KHead.Size = UDim2.new(1, 0, 0, 42)
-KHead.BackgroundColor3 = C_CARD
-KHead.BorderSizePixel = 0
-KHead.ZIndex = 101
-Instance.new("UICorner", KHead).CornerRadius = UDim.new(0, 12)
-
-local KTitle = Instance.new("TextLabel", KHead)
-KTitle.Size = UDim2.new(1, -50, 1, 0)
-KTitle.Position = UDim2.new(0, 14, 0, 0)
-KTitle.BackgroundTransparency = 1
-KTitle.Text = "ZENTRYX <font color=\"rgb(88,145,255)\">KEY SYSTEM</font>"
-KTitle.RichText = true
-KTitle.Font = Enum.Font.GothamBold
-KTitle.TextSize = 13
-KTitle.TextColor3 = C_TEXT
-KTitle.TextXAlignment = Enum.TextXAlignment.Left
-KTitle.ZIndex = 102
-
-local KClose = Instance.new("TextButton", KHead)
-KClose.Size = UDim2.new(0, 26, 0, 26)
-KClose.Position = UDim2.new(1, -34, 0.5, -13)
-KClose.BackgroundColor3 = C_CARD_INNER
-KClose.BorderSizePixel = 0
-KClose.Text = "X"
-KClose.Font = Enum.Font.GothamBold
-KClose.TextSize = 12
-KClose.TextColor3 = C_TEXT_MUTED
-KClose.AutoButtonColor = false
-KClose.ZIndex = 102
-Instance.new("UICorner", KClose).CornerRadius = UDim.new(0, 6)
-KClose.MouseButton1Click:Connect(function() gui:Destroy() end)
-
-local KSub = Instance.new("TextLabel", KeyWin)
-KSub.Size = UDim2.new(1, -30, 0, 24)
-KSub.Position = UDim2.new(0, 15, 0, 48)
-KSub.BackgroundTransparency = 1
-KSub.Text = "Введите лицензионный ключ для разблокировки чита:"
-KSub.Font = Enum.Font.GothamMedium
-KSub.TextSize = 11
-KSub.TextColor3 = C_TEXT_MUTED
-KSub.TextXAlignment = Enum.TextXAlignment.Left
-KSub.ZIndex = 101
-
-local BoxWrap = Instance.new("Frame", KeyWin)
-BoxWrap.Size = UDim2.new(1, -30, 0, 40)
-BoxWrap.Position = UDim2.new(0, 15, 0, 78)
-BoxWrap.BackgroundColor3 = C_CARD_INNER
-BoxWrap.BorderSizePixel = 0
-BoxWrap.ZIndex = 101
-Instance.new("UICorner", BoxWrap).CornerRadius = UDim.new(0, 8)
-local bSt = Instance.new("UIStroke", BoxWrap)
-bSt.Color = C_STROKE; bSt.Thickness = 1
-
-local KInput = Instance.new("TextBox", BoxWrap)
-KInput.Size = UDim2.new(1, -20, 1, 0)
-KInput.Position = UDim2.new(0, 10, 0, 0)
-KInput.BackgroundTransparency = 1
-KInput.PlaceholderText = "Вставьте ключ формата ZTX-XXXX-XXXX-XXXX..."
-KInput.PlaceholderColor3 = C_TEXT_MUTED
-KInput.Text = ""
-KInput.Font = Enum.Font.GothamSemibold
-KInput.TextSize = 11
-KInput.TextColor3 = C_TEXT
-KInput.ClearTextOnFocus = false
-KInput.ZIndex = 102
-
-local SubBtn = Instance.new("TextButton", KeyWin)
-SubBtn.Size = UDim2.new(1, -30, 0, 36)
-SubBtn.Position = UDim2.new(0, 15, 0, 132)
-SubBtn.BackgroundColor3 = C_ACCENT
-SubBtn.BorderSizePixel = 0
-SubBtn.Text = "ПРОВЕРИТЬ КЛЮЧ"
-SubBtn.Font = Enum.Font.GothamBold
-SubBtn.TextSize = 12
-SubBtn.TextColor3 = Color3.new(1, 1, 1)
-SubBtn.AutoButtonColor = false
-SubBtn.ZIndex = 101
-Instance.new("UICorner", SubBtn).CornerRadius = UDim.new(0, 8)
-
-local GetBtn = Instance.new("TextButton", KeyWin)
-GetBtn.Size = UDim2.new(1, -30, 0, 34)
-GetBtn.Position = UDim2.new(0, 15, 0, 178)
-GetBtn.BackgroundColor3 = C_CARD
-GetBtn.BorderSizePixel = 0
-GetBtn.Text = "ПОЛУЧИТЬ КЛЮЧ (DISCORD)"
-GetBtn.Font = Enum.Font.GothamBold
-GetBtn.TextSize = 11
-GetBtn.TextColor3 = C_TEXT_MUTED
-GetBtn.AutoButtonColor = false
-GetBtn.ZIndex = 101
-Instance.new("UICorner", GetBtn).CornerRadius = UDim.new(0, 8)
-local gSt = Instance.new("UIStroke", GetBtn)
-gSt.Color = C_STROKE; gSt.Thickness = 1
-
-GetBtn.MouseButton1Click:Connect(function()
-    local url = "https://discord.gg/mfxyHQ8AQq"
-    pcall(function() if setclipboard then setclipboard(url) end end)
-    pcall(function() if openurl then openurl(url) end end)
-    toast("Discord Ссылка", "Скопирована в буфер!", C_ACCENT)
-end)
-
--- Валидация и разблокировка
-SubBtn.MouseButton1Click:Connect(function()
-    local entered = string.upper(KInput.Text:gsub("%s+", ""))
-    if entered == "" then
-        toast("Key System", "Поле ключа пустое", C_WARNING)
-        return
-    end
-
-    if RegisteredKeys[entered] ~= nil then
-        if RegisteredKeys[entered] == true then
-            toast("Key System", "Ключ уже использован!", C_DANGER)
-        else
-            RegisteredKeys[entered] = true
-            toast("Key System", "Ключ подтверждён!", C_SUCCESS)
-
-            TWS:Create(KeyWin, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                Size = UDim2.new(0, 0, 0, 0),
-                BackgroundTransparency = 1
-            }):Play()
-
-            task.delay(0.3, function()
-                KeyWin:Destroy()
-                startZentryxHub()
-            end)
-        end
-    else
-        toast("Key System", "Неверный ключ!", C_DANGER)
-    end
-end)
-
-local drag, dStart, sPos
-KHead.InputBegan:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-        drag = true; dStart = Vector2.new(inp.Position.X, inp.Position.Y); sPos = KeyWin.Position
-    end
-end)
-UIS.InputChanged:Connect(function(inp)
-    if drag and inp.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = Vector2.new(inp.Position.X, inp.Position.Y) - dStart
-        KeyWin.Position = UDim2.new(sPos.X.Scale, sPos.X.Offset + delta.X, sPos.Y.Scale, sPos.Y.Offset + delta.Y)
-    end
-end)
-UIS.InputEnded:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
-end)
-
-toast("Zentryx Key System", "Ожидание ввода ключа...", C_ACCENT)
 
 end)
 
